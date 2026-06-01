@@ -22,6 +22,7 @@ import org.jspecify.annotations.Nullable;
 
 import java.util.*;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 public abstract class DimensionBiomePlacement {
@@ -77,12 +78,16 @@ public abstract class DimensionBiomePlacement {
 
 
     public void addPlacement(ResourceKey<Biome> biome, Climate.ParameterPoint noisePoint, boolean fromData) {
-        if (biomesInjected) {
-            Biolith.LOGGER.error("Biolith's BiomePlacement.addPlacement() called too late for biome: {}", biome.identifier());
-        } else {
-            placementRequests.add(new PlacementRequest(noisePoint, biome, fromData));
-        }
+       addPlacement(biome, noisePoint, fromData, _->true);
     }
+
+  public void addPlacement(ResourceKey<Biome> biome, Climate.ParameterPoint noisePoint, boolean fromData, Predicate<HolderGetter<Biome>> biomePredicate) {
+    if (biomesInjected) {
+      Biolith.LOGGER.error("Biolith's BiomePlacement.addPlacement() called too late for biome: {}", biome.identifier());
+    } else {
+      placementRequests.add(new PlacementRequest(noisePoint, biome, fromData, biomePredicate));
+    }
+  }
 
     public void addRemoval(ResourceKey<Biome> biome, boolean fromData) {
         if (biomesInjected) {
@@ -295,7 +300,7 @@ public abstract class DimensionBiomePlacement {
 
         // MultiNoise-based biomes are added directly to the parameters list.
 
-        placementRequests.forEach(request -> parameters.accept(request.pair().mapSecond(biomeEntryGetter::getOrThrow)));
+        placementRequests.stream().filter(request -> request.biomePredicate.test(biomeEntryGetter)).forEach(request -> parameters.accept(request.pair().mapSecond(biomeEntryGetter::getOrThrow)));
 
         // Replacement biomes are placed out-of-range so they do not generate except as replacements.
         // This adds the biome to MultiNoiseBiomeSource and BiomeSource so features and structures will place.
@@ -339,7 +344,7 @@ public abstract class DimensionBiomePlacement {
         return Mth.clamp(value * 0.5375D + 0.5D, 0D, 1D - Double.MIN_NORMAL);
     }
 
-    protected record PlacementRequest(Climate.ParameterPoint hypercube, ResourceKey<Biome> biome, boolean fromData) {
+    protected record PlacementRequest(Climate.ParameterPoint hypercube, ResourceKey<Biome> biome, boolean fromData, Predicate<HolderGetter<Biome>> biomePredicate) {
         public Pair<Climate.ParameterPoint, ResourceKey<Biome>> pair() {
             return Pair.of(hypercube, biome);
         }
